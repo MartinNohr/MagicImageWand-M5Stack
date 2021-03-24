@@ -12,7 +12,11 @@
  Author:	Martin
 */
 #include "MagicImageWand-M5Stack.h"
-//#include "fonts.h"
+
+#define tft m5.Lcd
+
+Gesture swipeDown("swipe down", 100, DIR_DOWN, 30);
+Gesture swipeUp("swipe up", 100, DIR_UP, 30);
 
 RTC_DATA_ATTR int nBootCount = 0;
 
@@ -36,20 +40,28 @@ void IRAM_ATTR oneshot_LED_timer_callback(void* arg)
 
 void setup()
 {
+	m5.begin(true, true, true, false);
 	Serial.begin(115200);
 	delay(10);
-	tft.init();
-	SetDisplayBrightness(nDisplayBrightness);
-	tft.fillScreen(TFT_BLACK);
-	tft.setRotation(3);
-	//Serial.println("boot: " + String(nBootCount));
+	tft.setFreeFont(FSS12);
+	tft.setTextColor(TFT_WHITE);
+	tft.setTextSize(1);
+	tft.textdatum = TL_DATUM;
 	CRotaryDialButton::begin(DIAL_A, DIAL_B, DIAL_BTN);
+	m5.BtnA.longPressTime = 700;
+	m5.background.longPressTime = 700;
 	setupSDcard();
 	//listDir(SD, "/", 2, "");
 	//gpio_set_direction((gpio_num_t)LED, GPIO_MODE_OUTPUT);
 	//digitalWrite(LED, HIGH);
 	gpio_set_direction((gpio_num_t)FRAMEBUTTON, GPIO_MODE_INPUT);
 	gpio_set_pull_mode((gpio_num_t)FRAMEBUTTON, GPIO_PULLUP_ONLY);
+	// init the onboard buttons
+	gpio_set_direction(GPIO_NUM_0, GPIO_MODE_INPUT);
+	gpio_set_pull_mode(GPIO_NUM_0, GPIO_PULLUP_ONLY);
+	gpio_set_direction(GPIO_NUM_35, GPIO_MODE_INPUT);
+	//gpio_set_pull_mode(GPIO_NUM_35, GPIO_PULLUP_ONLY); // not needed since there are no pullups on 35, they are input only
+
 	oneshot_LED_timer_args = {
 				oneshot_LED_timer_callback,
 				/* argument specified here will be passed to timer callback function */
@@ -93,6 +105,7 @@ void setup()
 		tft.setTextSize(1);
 		tft.drawString(__DATE__, 20, 110);
 	}
+	delay(1000);
 	tft.setFreeFont(&Dialog_bold_16);
 	charHeight = tft.fontHeight();
 	tft.setTextColor(menuLineActiveColor);
@@ -123,9 +136,28 @@ void setup()
 	//FastLED.setTemperature(whiteBalance);
 	FastLED.setTemperature(CRGB(whiteBalance.r, whiteBalance.g, whiteBalance.b));
 	FastLED.setBrightness(nStripBrightness);
+	FastLED.setMaxPowerInVoltsAndMilliamps(5, nStripMaxCurrent);
 	if (nBootCount == 0) {
 		//bool oldSecond = bSecondStrip;
 		//bSecondStrip = true;
+		// show 3 pixels on each end red and green, I had a strip that only showed 142 pixels, this will help detect that failure
+		SetPixel(0, CRGB::Red);
+		SetPixel(1, CRGB::Red);
+		SetPixel(2, CRGB::Red);
+		SetPixel(143, CRGB::Red);
+		SetPixel(142, CRGB::Red);
+		SetPixel(141, CRGB::Red);
+		FastLED.show();
+		delay(100);
+		SetPixel(0, CRGB::Green);
+		SetPixel(1, CRGB::Green);
+		SetPixel(2, CRGB::Green);
+		SetPixel(143, CRGB::Green);
+		SetPixel(142, CRGB::Green);
+		SetPixel(141, CRGB::Green);
+		FastLED.show();
+		delay(100);
+		FastLED.clear(true);
 		RainbowPulse();
 		//fill_noise8(leds, 144, 2, 0, 10, 2, 0, 0, 10);
 		//FastSPI_LED.show();
@@ -191,7 +223,6 @@ void setup()
 		//}
 	}
 	FastLED.clear(true);
-	delay(100);
 	tft.fillScreen(TFT_BLACK);
 
 	// wait for button release
@@ -204,14 +235,10 @@ void setup()
 	CRotaryDialButton::clear();
 	if (!bSdCardValid) {
 		DisplayCurrentFile();
-		delay(2000);
+		delay(1000);
 		ToggleFilesBuiltin(NULL);
+		tft.fillScreen(TFT_BLACK);
 	}
-	// init the onboard buttons
-	gpio_set_direction(GPIO_NUM_0, GPIO_MODE_INPUT);
-	gpio_set_pull_mode(GPIO_NUM_0, GPIO_PULLUP_ONLY);
-	gpio_set_direction(GPIO_NUM_35, GPIO_MODE_INPUT);
-	//gpio_set_pull_mode(GPIO_NUM_35, GPIO_PULLUP_ONLY); // not needed since there are no pullups on 35, they are input only
 
 	DisplayCurrentFile();
 	/*
@@ -233,6 +260,8 @@ void setup()
 		//adcAttachPin(36);
 		adcAttachPin(37);
 	*/
+	MenuButtons();
+	m5.Axp.SetLed(0);
 }
 
 void loop()
@@ -269,6 +298,27 @@ void loop()
 	}
 }
 
+
+// build menu buttons
+void MenuButtons()
+{
+	int charHeight = tft.fontHeight();
+	for (int ix = 0; ix < btnMenuArray.size(); ++ix) {
+		btnMenuArray[ix] = new Button(0, ix * charHeight, 320, charHeight - 1, false, "menu");
+	}
+}
+
+// enable or disable the menu buttons
+void EnableButtons(bool enable)
+{
+	for (int ix = 0; ix < btnMenuArray.size(); ++ix) {
+		if (enable)
+			btnMenuArray[ix]->draw();
+		else
+			btnMenuArray[ix]->hide();
+	}
+}
+
 bool RunMenus(int button)
 {
 	// save this so we can see if we need to save a new changed value
@@ -280,7 +330,7 @@ bool RunMenus(int button)
 	bool bExit = false;
 	for (int ix = 0; !gotmatch && MenuStack.top()->menu[ix].op != eTerminate; ++ix) {
 		// see if this is one is valid
-		if (!MenuStack.top()->menu[ix].valid) {
+		if (!bMenuValid[ix]) {
 			continue;
 		}
 		//Serial.println("menu button: " + String(button));
@@ -368,7 +418,6 @@ bool RunMenus(int button)
 	}
 }
 
-#define MENU_LINES 7
 // display the menu
 // if MenuStack.top()->index is > MENU_LINES, then shift the lines up by enough to display them
 // remember that we only have room for MENU_LINES lines
@@ -380,8 +429,12 @@ void ShowMenu(struct MenuItem* menu)
 	char line[100];
 	bool skip = false;
 	// loop through the menu
-	for (; menu->op != eTerminate; ++menu) {
-		menu->valid = false;
+	for (int menix = 0; menu->op != eTerminate; ++menu, ++menix) {
+		// make sure menu valid vector is big enough
+		if (bMenuValid.size() < menix + 1) {
+			bMenuValid.resize(menix + 1);
+		}
+		bMenuValid[menix] = false;
 		switch (menu->op) {
 		case eIfEqual:
 			// skip the next one if match, only booleans are handled so far
@@ -396,7 +449,7 @@ void ShowMenu(struct MenuItem* menu)
 			break;
 		}
 		if (skip) {
-			menu->valid = false;
+			bMenuValid[menix] = false;
 			continue;
 		}
 		char line[100], xtraline[100];
@@ -408,7 +461,7 @@ void ShowMenu(struct MenuItem* menu)
 		case eTextInt:
 		case eText:
 		case eTextCurrentFile:
-			menu->valid = true;
+			bMenuValid[menix] = true;
 			if (menu->value) {
 				val = *(int*)menu->value;
 				if (menu->op == eText) {
@@ -430,7 +483,7 @@ void ShowMenu(struct MenuItem* menu)
 			++y;
 			break;
 		case eList:
-			menu->valid = true;
+			bMenuValid[menix] = true;
 			// the list of macro files
 			// min holds the macro number
 			val = menu->min;
@@ -441,7 +494,7 @@ void ShowMenu(struct MenuItem* menu)
 			++y;
 			break;
 		case eBool:
-			menu->valid = true;
+			bMenuValid[menix] = true;
 			if (menu->value) {
 				// clean extra bits, just in case
 				bool* pb = (bool*)menu->value;
@@ -458,7 +511,7 @@ void ShowMenu(struct MenuItem* menu)
 		case eBuiltinOptions:
 			// for builtins only show if available
 			if (BuiltInFiles[CurrentFileIndex].menu != NULL) {
-				menu->valid = true;
+				bMenuValid[menix] = true;
 				sprintf(line, menu->text, BuiltInFiles[CurrentFileIndex].text);
 				++y;
 			}
@@ -466,7 +519,7 @@ void ShowMenu(struct MenuItem* menu)
 		case eMenu:
 		case eExit:
 		case eReboot:
-			menu->valid = true;
+			bMenuValid[menix] = true;
 			if (menu->value) {
 				sprintf(xtraline, menu->text, *(int*)menu->value);
 			}
@@ -478,7 +531,6 @@ void ShowMenu(struct MenuItem* menu)
 			else
 				sprintf(line, "%s%s", (menu->op == eReboot) ? "" : "+", xtraline);
 			++y;
-			//Serial.println("menu text4: " + String(line));
 			break;
 		}
 		if (strlen(line) && y >= MenuStack.top()->offset) {
@@ -487,14 +539,14 @@ void ShowMenu(struct MenuItem* menu)
 	}
 	MenuStack.top()->menucount = y;
 	// blank the rest of the lines
-	for (int ix = y; ix < MENU_LINES; ++ix) {
+	for (int ix = y; ix < MENULINES; ++ix) {
 		DisplayLine(ix, "");
 	}
 	// show line if menu has been scrolled
 	if (MenuStack.top()->offset > 0)
 		tft.drawLine(0, 0, 5, 0, menuLineActiveColor);
 	// show bottom line if last line is showing
-	if (MenuStack.top()->offset + (MENU_LINES - 1) < MenuStack.top()->menucount - 1)
+	if (MenuStack.top()->offset + (MENULINES - 1) < MenuStack.top()->menucount - 1)
 		tft.drawLine(0, tft.height() - 1, 5, tft.height() - 1, menuLineActiveColor);
 	else
 		tft.drawLine(0, tft.height() - 1, 5, tft.height() - 1, TFT_BLACK);
@@ -554,79 +606,199 @@ void ToggleBool(MenuItem* menu)
 	//Serial.println("fixed time: " + String(bFixedTime));
 }
 
-// get integer values
+#define BTN_INT_WIDTH 70
+#define BTN_INT_HEIGHT 48
+#define BTN_INT_XGAP 4
+#define BTN_INT_YGAP 4
+// button version of GetIntegerValue
 void GetIntegerValue(MenuItem* menu)
 {
-	tft.fillScreen(TFT_BLACK);
+	m5.update();
+	if (menu->change != NULL) {
+		(*menu->change)(menu, 1);
+	}
 	// -1 means to reset to original
-	int stepSize = 1;
-	int originalValue = *(int*)menu->value;
-	//Serial.println("int: " + String(menu->text) + String(*(int*)menu->value));
-	char line[50];
-	CRotaryDialButton::Button button = BTN_NONE;
-	bool done = false;
+	tft.pushState();
+	tft.fillScreen(BLACK);
 	const char* fmt = menu->decimals ? "%ld.%ld" : "%ld";
 	char minstr[20], maxstr[20];
 	sprintf(minstr, fmt, menu->min / (int)pow10(menu->decimals), menu->min % (int)pow10(menu->decimals));
 	sprintf(maxstr, fmt, menu->max / (int)pow10(menu->decimals), menu->max % (int)pow10(menu->decimals));
-	DisplayLine(1, String("Range: ") + String(minstr) + " to " + String(maxstr));
-	DisplayLine(3, "Long Press to Accept");
+	DisplayLine(1, String(minstr), 230);
+	DisplayLine(2, "to", 230);
+	DisplayLine(3, String(maxstr), 230);
 	int oldVal = *(int*)menu->value;
-	if (menu->change != NULL) {
-		(*menu->change)(menu, 1);
+	DisplayLine(0, String(*(int*)(menu->value)));
+	// build some buttons
+	std::array<Button*, 12> btnArray;
+	for (int ix = 0; ix < btnArray.size(); ++ix) {
+		static char* txt[12];
+		char tmp[4];
+		int xpos, ypos;
+		// set the text
+		switch (ix) {
+		case 0:
+			txt[ix] = "+/-";
+			break;
+		case 1:
+			txt[ix] = "0";
+			break;
+		case 2:
+			txt[ix] = "DEL";
+			break;
+		default:
+			txt[ix] = tmp;
+			sprintf(txt[ix], "%d", ix - 2);
+			break;
+		}
+		xpos = (BTN_INT_WIDTH + BTN_INT_XGAP) * (ix % 3);
+		ypos = (240 - BTN_INT_HEIGHT - BTN_INT_YGAP) - ((BTN_INT_HEIGHT + BTN_INT_YGAP) * (ix / 3));
+		btnArray[ix] = new Button(xpos, ypos, BTN_INT_WIDTH, BTN_INT_HEIGHT, false, txt[ix], { YELLOW, BLACK, NODRAW }, { GREEN, BLACK, NODRAW });
 	}
+	// add an OK button
+	Button btnOK(320 - BTN_INT_WIDTH, 240 - BTN_INT_HEIGHT - BTN_INT_YGAP, BTN_INT_WIDTH, BTN_INT_HEIGHT, false, "OK", { YELLOW, BLACK, NODRAW }, { GREEN, BLACK, NODRAW });
+	// add a cancel button
+	Button btnCancel(320 - BTN_INT_WIDTH, 240 - 2 * (BTN_INT_HEIGHT + BTN_INT_YGAP), BTN_INT_WIDTH, BTN_INT_HEIGHT, false, "CANCEL", { YELLOW, BLACK, NODRAW }, { GREEN, BLACK, NODRAW });
+	// clear the buttons, for some reason the cancel one is often set to tapped
+	btnCancel.cancel();
+	btnOK.cancel();
+	char line[50];
+	bool done = false;
+	bool redraw = true;
+	bool editing = false;
+	int value = *(int*)menu->value;
+	// put the current value in the string
 	do {
-		//Serial.println("button: " + String(button));
-		switch (button) {
-		case BTN_LEFT:
-			if (stepSize != -1)
-				*(int*)menu->value -= stepSize;
-			break;
-		case BTN_RIGHT:
-			if (stepSize != -1)
-				*(int*)menu->value += stepSize;
-			break;
-		case BTN_SELECT:
-			if (stepSize == -1) {
-				stepSize = 1;
+		m5.update();
+		if (redraw) {
+			sprintf(line, menu->text, value / (int)pow10(menu->decimals), abs(value) % (int)pow10(menu->decimals));
+			DisplayLine(0, line);
+			redraw = false;
+		}
+		for (int ix = 0; ix < btnArray.size(); ++ix) {
+			if (btnArray[ix]->event == E_TAP) {
+				redraw = true;
+				// clear if the first time
+				if (!editing) {
+					value = 0;
+					editing = true;
+				}
+				switch (ix) {
+				case 0:	// toggle sign
+					value = -value;
+					break;
+				case 1:		// 0
+					value *= 10;
+					break;
+				case 2:		// DEL (backspace)
+					value /= 10;
+					break;
+				default:	// numbers+2
+					value = value * 10 + (ix - 2);
+					break;
+				}
 			}
-			else {
-				stepSize *= 10;
-			}
-			if (stepSize > (menu->max / 10)) {
-				stepSize = -1;
-			}
-			break;
-		case BTN_LONG:
-			if (stepSize == -1) {
-				*(int*)menu->value = originalValue;
-				stepSize = 1;
-			}
-			else {
+		}
+		// check for ok or cancel button
+		if (btnCancel.event == E_TAP) {
+			//Serial.println("cancel");
+			done = true;
+		}
+		if (btnOK.event == E_TAP) {
+			// check the value
+			if (value <= menu->max && value >= menu->min) {
 				done = true;
+				// save the new value
+				*(int*)(menu->value) = value;
 			}
-			break;
-		}
-		// make sure within limits
-		*(int*)menu->value = constrain(*(int*)menu->value, menu->min, menu->max);
-		// show slider bar
-		tft.fillRect(0, 2 * tft.fontHeight(), tft.width() - 1, 6, TFT_BLACK);
-		DrawProgressBar(0, 2 * charHeight + 4, tft.width() - 1, 12, map(*(int*)menu->value, menu->min, menu->max, 0, 100));
-		sprintf(line, menu->text, *(int*)menu->value / (int)pow10(menu->decimals), *(int*)menu->value % (int)pow10(menu->decimals));
-		DisplayLine(0, line);
-		DisplayLine(4, stepSize == -1 ? "Reset: long press (Click +)" : "step: " + String(stepSize) + " (Click +)");
-		if (menu->change != NULL && oldVal != *(int*)menu->value) {
-			(*menu->change)(menu, 0);
-			oldVal = *(int*)menu->value;
-		}
-		while (!done && (button = ReadButton()) == BTN_NONE) {
-			delay(1);
+			else {
+				redraw = true;
+				DisplayLine(0, "Value out of range", 0, RED);
+				delay(2000);
+			}
 		}
 	} while (!done);
-	if (menu->change != NULL) {
-		(*menu->change)(menu, -1);
+	tft.popState();
+	tft.fillScreen(BLACK);
+	// delete the buttons
+	for (int ix = 0; ix < btnArray.size(); ++ix) {
+		delete btnArray[ix];
 	}
 }
+//
+//// get integer values
+//void GetIntegerValue(MenuItem* menu)
+//{
+//	tft.fillScreen(TFT_BLACK);
+//	// -1 means to reset to original
+//	int stepSize = 1;
+//	int originalValue = *(int*)menu->value;
+//	//Serial.println("int: " + String(menu->text) + String(*(int*)menu->value));
+//	char line[50];
+//	CRotaryDialButton::Button button = BTN_NONE;
+//	bool done = false;
+//	const char* fmt = menu->decimals ? "%ld.%ld" : "%ld";
+//	char minstr[20], maxstr[20];
+//	sprintf(minstr, fmt, menu->min / (int)pow10(menu->decimals), menu->min % (int)pow10(menu->decimals));
+//	sprintf(maxstr, fmt, menu->max / (int)pow10(menu->decimals), menu->max % (int)pow10(menu->decimals));
+//	DisplayLine(1, String("Range: ") + String(minstr) + " to " + String(maxstr));
+//	DisplayLine(3, "Long Press to Accept");
+//	int oldVal = *(int*)menu->value;
+//	if (menu->change != NULL) {
+//		(*menu->change)(menu, 1);
+//	}
+//	do {
+//		//Serial.println("button: " + String(button));
+//		switch (button) {
+//		case BTN_LEFT:
+//			if (stepSize != -1)
+//				*(int*)menu->value -= stepSize;
+//			break;
+//		case BTN_RIGHT:
+//			if (stepSize != -1)
+//				*(int*)menu->value += stepSize;
+//			break;
+//		case BTN_SELECT:
+//			if (stepSize == -1) {
+//				stepSize = 1;
+//			}
+//			else {
+//				stepSize *= 10;
+//			}
+//			if (stepSize > (menu->max / 10)) {
+//				stepSize = -1;
+//			}
+//			break;
+//		case BTN_LONG:
+//			if (stepSize == -1) {
+//				*(int*)menu->value = originalValue;
+//				stepSize = 1;
+//			}
+//			else {
+//				done = true;
+//			}
+//			break;
+//		}
+//		// make sure within limits
+//		*(int*)menu->value = constrain(*(int*)menu->value, menu->min, menu->max);
+//		// show slider bar
+//		tft.fillRect(0, 2 * tft.fontHeight(), tft.width() - 1, 6, TFT_BLACK);
+//		DrawProgressBar(0, 2 * charHeight + 4, tft.width() - 1, 12, map(*(int*)menu->value, menu->min, menu->max, 0, 100));
+//		sprintf(line, menu->text, *(int*)menu->value / (int)pow10(menu->decimals), *(int*)menu->value % (int)pow10(menu->decimals));
+//		DisplayLine(0, line);
+//		DisplayLine(4, stepSize == -1 ? "Reset: long press (Click +)" : "step: " + String(stepSize) + " (Click +)");
+//		if (menu->change != NULL && oldVal != *(int*)menu->value) {
+//			(*menu->change)(menu, 0);
+//			oldVal = *(int*)menu->value;
+//		}
+//		while (!done && (button = ReadButton()) == BTN_NONE) {
+//			delay(1);
+//		}
+//	} while (!done);
+//	if (menu->change != NULL) {
+//		(*menu->change)(menu, -1);
+//	}
+//}
 
 void UpdateStripBrightness(MenuItem* menu, int flag)
 {
@@ -710,31 +882,34 @@ void UpdateDisplayBrightness(MenuItem* menu, int flag)
 	SetDisplayBrightness(*(int*)menu->value);
 }
 
-void SetDisplayBrightness(int val)
+// set LCD brighntess, 0 to 100
+void SetDisplayBrightness(uint b)
 {
-	ledcWrite(ledChannel, map(val, 0, 100, 0, 255));
+	uint val = constrain(b, 0, 100);
+	int bright = map(val, 0, 100, 2500, 3300);
+	m5.Axp.SetLcdVoltage(bright);	// 2500 to 3300
 }
 
 uint16_t ColorList[] = {
-	//TFT_NAVY,
-	//TFT_MAROON,
-	//TFT_OLIVE,
 	TFT_WHITE,
+	TFT_BLACK,
+	TFT_NAVY,
+	TFT_DARKGREEN,
+	TFT_DARKCYAN,
+	TFT_MAROON,
+	TFT_PURPLE,
+	TFT_OLIVE,
 	TFT_LIGHTGREY,
+	TFT_DARKGREY,
 	TFT_BLUE,
-	TFT_SKYBLUE,
+	TFT_GREEN,
 	TFT_CYAN,
 	TFT_RED,
-	TFT_BROWN,
-	TFT_GREEN,
 	TFT_MAGENTA,
 	TFT_YELLOW,
 	TFT_ORANGE,
 	TFT_GREENYELLOW,
-	TFT_GOLD,
-	TFT_SILVER,
-	TFT_VIOLET,
-	TFT_PURPLE,
+	TFT_PINK,
 };
 
 // find the color in the list
@@ -800,12 +975,25 @@ void SetMenuColors(MenuItem* menu)
 	}
 }
 
+// display the button info on the bottom
+void ShowButtons(bool all)
+{
+	tft.fillRect(45, 231, 20, 8, WHITE);
+	if (all) {
+		//tft.fillRect(151, 236, 20, 3, WHITE);
+		tft.fillTriangle(151, 239, 171, 239, 171, 231, WHITE);
+		//tft.fillRect(257, 236, 20, 3, WHITE);
+		tft.fillTriangle(257, 239, 257, 231, 277, 239, WHITE);
+	}
+}
+
 // handle the menus
 bool HandleMenus()
 {
 	if (bMenuChanged) {
 		ShowMenu(MenuStack.top()->menu);
 		bMenuChanged = false;
+		ShowButtons(true);
 	}
 	bool didsomething = true;
 	CRotaryDialButton::Button button = ReadButton();
@@ -854,8 +1042,35 @@ bool HandleMenus()
 		DisplayCurrentFile();
 		bMenuChanged = true;
 		break;
+	case BTN_SWIPEUP:
+		if (MenuStack.top()->menucount > MENULINES) {
+			MenuStack.top()->offset += MENULINES;
+			MenuStack.top()->index += MENULINES;
+			if (MenuStack.top()->offset > MenuStack.top()->menucount - MENULINES) {
+				MenuStack.top()->offset = MenuStack.top()->menucount - MENULINES;
+				MenuStack.top()->index = MenuStack.top()->menucount - MENULINES;
+			}
+		}
+		break;
+	case BTN_SWIPEDOWN:
+		MenuStack.top()->offset -= MENULINES;
+		MenuStack.top()->index -= MENULINES;
+		if (MenuStack.top()->offset < 0) {
+			MenuStack.top()->offset = 0;
+			MenuStack.top()->index = 0;
+		}
+		break;
 	default:
-		didsomething = false;
+		if (button >= BTN_MENU) {
+			int btn = button - BTN_MENU;
+			//Serial.println("btn: " + String(btn));
+			if (btn < MenuStack.top()->menucount) {
+				MenuStack.top()->index = btn + MenuStack.top()->offset;
+				CRotaryDialButton::pushButton(BTN_SELECT);
+			}
+		}
+		else
+			didsomething = false;
 		break;
 	}
 	// check some conditions that should redraw the menu
@@ -904,6 +1119,10 @@ bool HandleRunMode()
 		tft.fillScreen(TFT_BLACK);
 		bSettingsMode = true;
 		break;
+	case BTN_SWIPEUP:
+		break;
+	case BTN_SWIPEUP:
+		break;
 	default:
 		didsomething = false;
 		break;
@@ -914,6 +1133,7 @@ bool HandleRunMode()
 // check buttons and return if one pressed
 enum CRotaryDialButton::Button ReadButton()
 {
+	m5.update();
 	// check for the on board button 35
 	static bool bButton35 = false;
 	// check enter button, like longpress
@@ -931,6 +1151,34 @@ enum CRotaryDialButton::Button ReadButton()
 	enum CRotaryDialButton::Button retValue = BTN_NONE;
 	// read the next button, or NONE it none there
 	retValue = CRotaryDialButton::dequeue();
+	// check the M5 touch buttons
+	if (m5.BtnA.event == E_LONGPRESSING) {
+		retValue = BTN_LONG;
+	}
+	if (m5.BtnA.event == E_TAP) {
+		retValue = BTN_SELECT;
+	}
+	if (m5.BtnB.event == E_TAP) {
+		retValue = BTN_LEFT;
+	}
+	if (m5.BtnC.event == E_TAP) {
+		retValue = BTN_RIGHT;
+	}
+	for (int ix = 0; ix < btnMenuArray.size(); ++ix) {
+		if (btnMenuArray[ix] && btnMenuArray[ix]->event == E_TAP) {
+			retValue = (CRotaryDialButton::Button)(BTN_MENU + ix);
+			break;
+		}
+	}
+	if (m5.background.event == E_LONGPRESSING) {
+		retValue = BTN_LONG;
+	}
+	if (swipeDown.wasDetected()) {
+		retValue = BTN_SWIPEDOWN;
+	}
+	if (swipeUp.wasDetected()) {
+		retValue = BTN_SWIPEUP;
+	}
 	return retValue;
 }
 
@@ -1358,17 +1606,28 @@ void LightBar(MenuItem* menu)
 	bCancelMacro = bCancelRun = false;
 }
 
+// utility for DisplayLedLightBar()
+void FillLightBar()
+{
+	int offset = bDisplayAllFromMiddle ? (144 - nDisplayAllPixelCount) / 2 : 0;
+	if (!bDisplayAllFromMiddle && bUpsideDown)
+		offset = 144 - nDisplayAllPixelCount;
+	FastLED.clear();
+	if (bDisplayAllRGB)
+		fill_solid(leds + offset, nDisplayAllPixelCount, CRGB(nDisplayAllRed, nDisplayAllGreen, nDisplayAllBlue));
+	else
+		fill_solid(leds + offset, nDisplayAllPixelCount, CHSV(nDisplayAllHue, nDisplayAllSaturation, nDisplayAllBrightness));
+	FastLED.show();
+}
+
 // Used LEDs as a light bar
 void DisplayLedLightBar()
 {
 	DisplayLine(1, "");
-	if (bDisplayAllRGB)
-		FastLED.showColor(CRGB(nDisplayAllRed, nDisplayAllGreen, nDisplayAllBlue));
-	else
-		FastLED.showColor(CHSV(nDisplayAllHue, nDisplayAllSaturation, nDisplayAllBrightness));
+	FillLightBar();
 	// show until cancelled, but check for rotations of the knob
 	CRotaryDialButton::Button btn;
-	int what = 0;	// 0 for hue, 1 for saturation, 2 for brightness, 3 for increment
+	int what = 0;	// 0 for hue, 1 for saturation, 2 for brightness, 3 for pixels, 4 for increment
 	int increment = 10;
 	bool bChange = true;
 	while (true) {
@@ -1394,7 +1653,13 @@ void DisplayLedLightBar()
 					line = "Brightness: " + String(nDisplayAllBrightness);
 				break;
 			case 3:
-				line = " (step: " + String(increment) + ")";
+				line = "Pixels: " + String(nDisplayAllPixelCount);
+				break;
+			case 4:
+				line = "From: " + String((bDisplayAllFromMiddle ? "Middle" : "End"));
+				break;
+			case 5:
+				line = " (step size: " + String(increment) + ")";
 				break;
 			}
 			DisplayLine(2, line);
@@ -1426,6 +1691,12 @@ void DisplayLedLightBar()
 					nDisplayAllBrightness += increment;
 				break;
 			case 3:
+				nDisplayAllPixelCount += increment;
+				break;
+			case 4:
+				bDisplayAllFromMiddle = true;
+				break;
+			case 5:
 				increment *= 10;
 				break;
 			}
@@ -1451,12 +1722,19 @@ void DisplayLedLightBar()
 					nDisplayAllBrightness -= increment;
 				break;
 			case 3:
+				nDisplayAllPixelCount -= increment;
+				break;
+			case 4:
+				bDisplayAllFromMiddle = false;
+				break;
+			case 5:
 				increment /= 10;
 				break;
 			}
 			break;
 		case BTN_SELECT:
-			what = ++what % 4;
+			// switch to the next selection, wrapping around if necessary
+			what = ++what % 6;
 			break;
 		case BTN_LONG:
 			// put it back, we don't want it
@@ -1466,6 +1744,7 @@ void DisplayLedLightBar()
 		if (CheckCancel())
 			return;
 		if (bChange) {
+			nDisplayAllPixelCount = constrain(nDisplayAllPixelCount, 1, 144);
 			increment = constrain(increment, 1, 100);
 			if (bDisplayAllRGB) {
 				if (bAllowRollover) {
@@ -1487,7 +1766,7 @@ void DisplayLedLightBar()
 					nDisplayAllGreen = constrain(nDisplayAllGreen, 0, 255);
 					nDisplayAllBlue = constrain(nDisplayAllBlue, 0, 255);
 				}
-				FastLED.showColor(CRGB(nDisplayAllRed, nDisplayAllGreen, nDisplayAllBlue));
+				FillLightBar();
 			}
 			else {
 				if (bAllowRollover) {
@@ -1505,7 +1784,7 @@ void DisplayLedLightBar()
 					nDisplayAllSaturation = constrain(nDisplayAllSaturation, 0, 255);
 				}
 				nDisplayAllBrightness = constrain(nDisplayAllBrightness, 0, 255);
-				FastLED.showColor(CHSV(nDisplayAllHue, nDisplayAllSaturation, nDisplayAllBrightness));
+				FillLightBar();
 			}
 		}
 		delay(10);
@@ -2402,7 +2681,6 @@ void ShowBmp(MenuItem*)
 			break;
 		case CRotaryDialButton::BTN_LONGPRESS:
 			done = true;
-			CRotaryDialButton::pushButton(CRotaryDialButton::BTN_LONGPRESS);
 			break;
 		case CRotaryDialButton::BTN_CLICK:
 			if (bShowingSize) {
@@ -2411,10 +2689,15 @@ void ShowBmp(MenuItem*)
 			}
 			else {
 				tft.fillScreen(TFT_BLACK);
-				DisplayLine(0, currentFolder);
-				DisplayLine(1, FileNames[CurrentFileIndex]);
+				//DisplayLine(0, currentFolder);
+				DisplayLine(0, FileNames[CurrentFileIndex]);
+				float walk = (float)imgHeight / (float)imgWidth;
+				DisplayLine(2, "" + String(walk, 2) + " meters " + String(walk * 3.28084, 1) + " feet");
 				DisplayLine(3, "Height: " + String(imgWidth));
 				DisplayLine(4, "Width:  " + String(imgHeight));
+				// calculate display time
+				float dspTime = bFixedTime ? nFixedImageTime : (imgHeight * nFrameHold / 1000.0 + imgHeight * .008);
+				DisplayLine(5, "About " + String((int)round(dspTime)) + " Seconds");
 				bShowingSize = true;
 				redraw = false;
 			}
@@ -2439,14 +2722,16 @@ void ShowBmp(MenuItem*)
 	tft.fillScreen(TFT_BLACK);
 }
 
-void DisplayLine(int line, String text, int16_t color)
+void DisplayLine(int line, String text, int indent, int16_t color)
 {
 	if (bPauseDisplay)
 		return;
+	tft.textdatum = TL_DATUM;
+	int charHeight = tft.fontHeight();
 	int y = line * charHeight + (bSettingsMode && !bRunningMacro ? 0 : 8);
-	tft.fillRect(0, y, tft.width(), charHeight, TFT_BLACK);
+	tft.fillRect(indent, y, tft.width(), charHeight, TFT_BLACK);
 	tft.setTextColor(color);
-	tft.drawString(text, 0, y);
+	tft.drawString(text, indent, y);
 }
 
 // the star is used to indicate active menu line
@@ -2569,11 +2854,11 @@ void DisplayCurrentFile(bool path)
 			DisplayLine(0, ((path && bShowFolder) ? currentFolder : "") + FileNames[CurrentFileIndex] + (bMirrorPlayImage ? "><" : ""));
 		}
 		else {
-			DisplayLine(0, "No SD Card or Files");
+			WriteMessage("No SD Card or Files", true);
 		}
 	}
 	if (!bIsRunning && bShowNextFiles) {
-		for (int ix = 1; ix < MENU_LINES - 1; ++ix) {
+		for (int ix = 1; ix < MENULINES - 1; ++ix) {
 			if (ix + CurrentFileIndex >= FileNames.size()) {
 				DisplayLine(ix, "", menuLineColor);
 			}
@@ -2606,12 +2891,15 @@ void ShowProgressBar(int percent)
 void WriteMessage(String txt, bool error, int wait)
 {
 	tft.fillScreen(TFT_BLACK);
-	if (error)
+	if (error) {
 		txt = "**" + txt + "**";
+		tft.setTextColor(TFT_RED);
+	}
 	tft.setCursor(0, tft.fontHeight());
 	tft.setTextWrap(true);
 	tft.print(txt);
 	delay(wait);
+	tft.setTextColor(TFT_WHITE);
 }
 
 // create the associated MIW name
@@ -3060,7 +3348,10 @@ bool SaveSettings(bool save, bool bOnlySignature, bool bAutoloadOnlyFlag)
 		// don't need to do this here since it is always set right before running
 		//FastLED.setBrightness(nStripBrightness);
 	}
-	WriteMessage(String(save ? (bAutoloadOnlyFlag ? "Autoload Saved" : "Settings Saved") : "Settings Loaded"));
+	// don't display if only loading the autoload flag
+	if (save || !bAutoloadOnlyFlag) {
+		WriteMessage(String(save ? (bAutoloadOnlyFlag ? "Autoload Saved" : "Settings Saved") : "Settings Loaded"), false, 1000);
+	}
 	return retvalue;
 }
 
@@ -3170,7 +3461,7 @@ int AdjustStripIndex(int ix)
 		break;
 	case 1:	// bottom and top normal, chained, so nothing to do
 		break;
-	case 2:	// top reversed, bottom normal, not connection in the middle
+	case 2:	// top reversed, bottom normal, no connection in the middle
 		if (ix >= NUM_LEDS) {
 			ix = (NUM_LEDS - 1 - ix);
 		}
@@ -3335,8 +3626,8 @@ void RainbowPulse()
 	//Serial.println("Len: " + String(STRIPLENGTH));
 	for (int i = 0; i < TWO_HUNDRED_PI; i++) {
 		element = round((STRIPLENGTH - 1) / 2 * (-cos(i / (PI_SCALE * 100.0)) + 1));
+		//Serial.println("elements: " + String(element) + " " + String(last_element));
 		if (element > last_element) {
-			//Serial.println("el: " + String(element));
 			SetPixel(element, CHSV(element * nRainbowPulseColorScale + nRainbowPulseStartColor, nRainbowPulseSaturation, 255));
 			FastLED.show();
 			highest_element = max(highest_element, element);
@@ -3674,12 +3965,12 @@ void SD_file_download(String filename) {
 }
 
 void IncreaseRepeatButton() {
-	// This can be for sure made into an universal fuction like IncreaseButton(Setting, Value)
+	// This can be for sure made into a universal function like IncreaseButton(Setting, Value)
 	webpage += String("&nbsp;<a href='/settings/increpeat'><strong>&#8679;</strong></a>");
 }
 
 void DecreaseRepeatButton() {
-	// This can be for sure made into an universal fuction like DecreaseButton(Setting, Value)
+	// This can be for sure made into a universal function like DecreaseButton(Setting, Value)
 	webpage += String("&nbsp;<a href='/settings/decrepeat'><strong>&#8681;</strong></a>");
 }
 
