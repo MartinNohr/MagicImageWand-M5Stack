@@ -6,6 +6,8 @@
 
 #include <M5Core2.h>
 #include <EEPROM.h>
+#include "fonts.h"
+
 /*
  Name:		MagicImageWand.ino
  Created:	12/18/2020 6:12:01 PM
@@ -40,7 +42,7 @@ void IRAM_ATTR oneshot_LED_timer_callback(void* arg)
 
 void setup()
 {
-	m5.begin(true, true, true, false);
+	m5.begin(true, false, true, false);
 	Serial.begin(115200);
 	delay(10);
 	tft.setFreeFont(FSS12);
@@ -539,14 +541,14 @@ void ShowMenu(struct MenuItem* menu)
 	}
 	MenuStack.top()->menucount = y;
 	// blank the rest of the lines
-	for (int ix = y; ix < MENULINES; ++ix) {
+	for (int ix = y; ix < MENU_LINES; ++ix) {
 		DisplayLine(ix, "");
 	}
 	// show line if menu has been scrolled
 	if (MenuStack.top()->offset > 0)
 		tft.drawLine(0, 0, 5, 0, menuLineActiveColor);
 	// show bottom line if last line is showing
-	if (MenuStack.top()->offset + (MENULINES - 1) < MenuStack.top()->menucount - 1)
+	if (MenuStack.top()->offset + (MENU_LINES - 1) < MenuStack.top()->menucount - 1)
 		tft.drawLine(0, tft.height() - 1, 5, tft.height() - 1, menuLineActiveColor);
 	else
 		tft.drawLine(0, tft.height() - 1, 5, tft.height() - 1, TFT_BLACK);
@@ -1043,18 +1045,18 @@ bool HandleMenus()
 		bMenuChanged = true;
 		break;
 	case BTN_SWIPEUP:
-		if (MenuStack.top()->menucount > MENULINES) {
-			MenuStack.top()->offset += MENULINES;
-			MenuStack.top()->index += MENULINES;
-			if (MenuStack.top()->offset > MenuStack.top()->menucount - MENULINES) {
-				MenuStack.top()->offset = MenuStack.top()->menucount - MENULINES;
-				MenuStack.top()->index = MenuStack.top()->menucount - MENULINES;
+		if (MenuStack.top()->menucount > MENU_LINES) {
+			MenuStack.top()->offset += MENU_LINES;
+			MenuStack.top()->index += MENU_LINES;
+			if (MenuStack.top()->offset > MenuStack.top()->menucount - MENU_LINES) {
+				MenuStack.top()->offset = MenuStack.top()->menucount - MENU_LINES;
+				MenuStack.top()->index = MenuStack.top()->menucount - MENU_LINES;
 			}
 		}
 		break;
 	case BTN_SWIPEDOWN:
-		MenuStack.top()->offset -= MENULINES;
-		MenuStack.top()->index -= MENULINES;
+		MenuStack.top()->offset -= MENU_LINES;
+		MenuStack.top()->index -= MENU_LINES;
 		if (MenuStack.top()->offset < 0) {
 			MenuStack.top()->offset = 0;
 			MenuStack.top()->index = 0;
@@ -1121,7 +1123,7 @@ bool HandleRunMode()
 		break;
 	case BTN_SWIPEUP:
 		break;
-	case BTN_SWIPEUP:
+	case BTN_SWIPEDOWN:
 		break;
 	default:
 		didsomething = false;
@@ -1202,16 +1204,16 @@ void setupSDcard()
 {
 	bSdCardValid = false;
 #if USE_STANDARD_SD
-	gpio_set_direction((gpio_num_t)SDcsPin, GPIO_MODE_OUTPUT);
-	delay(50);
+	//gpio_set_direction((gpio_num_t)SDcsPin, GPIO_MODE_OUTPUT);
+	//delay(50);
 	//SPIClass(1);
-	spiSDCard.begin(SDSckPin, SDMisoPin, SDMosiPin, SDcsPin);	// SCK,MISO,MOSI,CS
-	delay(20);
+	//spiSDCard.begin(SDSckPin, SDMisoPin, SDMosiPin, SDcsPin);	// SCK,MISO,MOSI,CS
+	//delay(20);
 
-	if (!SD.begin(SDcsPin, spiSDCard)) {
-		//Serial.println("Card Mount Failed");
-		return;
-	}
+	//if (!SD.begin(SDcsPin, spiSDCard)) {
+	//	//Serial.println("Card Mount Failed");
+	//	return;
+	//}
 	uint8_t cardType = SD.cardType();
 
 	if (cardType == CARD_NONE) {
@@ -2858,7 +2860,7 @@ void DisplayCurrentFile(bool path)
 		}
 	}
 	if (!bIsRunning && bShowNextFiles) {
-		for (int ix = 1; ix < MENULINES - 1; ++ix) {
+		for (int ix = 1; ix < MENU_LINES - 1; ++ix) {
 			if (ix + CurrentFileIndex >= FileNames.size()) {
 				DisplayLine(ix, "", menuLineColor);
 			}
@@ -2934,7 +2936,7 @@ bool ProcessConfigFile(String filename)
 #if USE_STANDARD_SD
 	SDFile rdfile;
 #else
-	FsFile rdfile;
+	SDFile rdfile;
 #endif
 	rdfile = SD.open(filepath);
 	if (rdfile.available()) {
@@ -3059,8 +3061,8 @@ bool GetFileNamesFromSD(String dir) {
 		File root = SD.open(dir);
 		File file;
 #else
-		FsFile root = SD.open(dir, O_RDONLY);
-		FsFile file;
+		SDFile root = SD.open(dir, O_RDONLY);
+		SDFile file;
 #endif
 		String CurrentFilename = "";
 		if (!root) {
@@ -3247,7 +3249,7 @@ bool WriteOrDeleteConfigFile(String filename, bool remove, bool startfile)
 #if USE_STANDARD_SD
 		File file = SD.open(filepath.c_str(), bRecordingMacro ? FILE_APPEND : FILE_WRITE);
 #else
-		FsFile file = SD.open(filepath.c_str(), bRecordingMacro ? (O_APPEND | O_WRITE | O_CREAT) : (O_WRITE | O_TRUNC | O_CREAT));
+		SDFile file = SD.open(filepath.c_str(), bRecordingMacro ? (O_APPEND | O_WRITE | O_CREAT) : (O_WRITE | O_TRUNC | O_CREAT));
 #endif
 		if (file) {
 			// loop through the var list
@@ -3549,71 +3551,6 @@ void IRAM_ATTR SetPixel(int ix, CRGB pixel, int column, int totalColumns)
 		leds[ix2] = pixel;
 }
 
-#define Fbattery    3700  //The default battery is 3700mv when the battery is fully charged.
-
-float XS = 0.00225;      //The returned reading is multiplied by this XS to get the battery voltage.
-uint16_t MUL = 1000;
-uint16_t MMUL = 100;
-// read and display the battery voltage
-void ReadBattery(MenuItem* menu)
-{
-	//tft.clear();
-	uint16_t bat = analogRead(A4);
-	Serial.println("bat: " + String(bat));
-	DisplayLine(0, "Battery: " + String(bat));
-	delay(1000);
-	//uint16_t c = analogRead(13) * XS * MUL;
-	////uint16_t d  =  (analogRead(13)*XS*MUL*MMUL)/Fbattery;
-	//Serial.println(analogRead(13));
-	////Serial.println((String)d);
- //  // Serial.printf("%x",analogRead(13));
-	//Heltec.display->drawString(0, 0, "Remaining battery still has:");
-	//Heltec.display->drawString(0, 10, "VBAT:");
-	//Heltec.display->drawString(35, 10, (String)c);
-	//Heltec.display->drawString(60, 10, "(mV)");
-	//// Heltec.display->drawString(90, 10, (String)d);
-	//// Heltec.display->drawString(98, 10, ".";
-	//// Heltec.display->drawString(107, 10, "%");
-	//Heltec.display->display();
-	//delay(2000);
-	//Heltec.display->clear();
- //Battery voltage read pin changed from GPIO13 to GPI37
-	////adcStart(37);
-	////while (adcBusy(37))
-	////	;
-	////Serial.printf("Battery power in GPIO 37: ");
-	////Serial.println(analogRead(37));
-	////uint16_t c1 = analogRead(37) * XS * MUL;
-	////adcEnd(37);
-	////Serial.println("Vbat: " + String(c1));
-
-	////delay(100);
-
-	//adcStart(36);
-	//while (adcBusy(36));
-	//Serial.printf("voltage input on GPIO 36: ");
-	//Serial.println(analogRead(36));
-	//uint16_t c2 = analogRead(36) * 0.769 + 150;
-	//adcEnd(36);
-	//Serial.println("-------------");
-	// uint16_t c  =  analogRead(13)*XS*MUL;
-	// Serial.println(analogRead(13));
-	////Heltec.display->drawString(0, 0, "Vbat = ");
-	////Heltec.display->drawString(33, 0, (String)c1);
-	////Heltec.display->drawString(60, 0, "(mV)");
-
-	//Heltec.display->drawString(0, 10, "Vin   = ");
-	//Heltec.display->drawString(33, 10, (String)c2);
-	//Heltec.display->drawString(60, 10, "(mV)");
-
-	// Heltec.display->drawString(0, 0, "Remaining battery still has:");
-	// Heltec.display->drawString(0, 10, "VBAT:");
-	// Heltec.display->drawString(35, 10, (String)c);
-	// Heltec.display->drawString(60, 10, "(mV)");
-	////Heltec.display->display();
-	////delay(2000);
-}
-
 // grow and shrink a rainbow type pattern
 #define PI_SCALE 2
 #define TWO_HUNDRED_PI (628*PI_SCALE)
@@ -3782,7 +3719,7 @@ void ReportCouldNotCreateFile(String target) {
 	SendHTML_Stop();
 }
 
-FsFile UploadFile; // I would need some Help here, Martin
+SDFile UploadFile; // I would need some Help here, Martin
 void handleFileUpload() { // upload a new file to the Filing system
 	HTTPUpload& uploadfile = server.upload(); // See https://github.com/esp8266/Arduino/tree/master/libraries/ESP8266WebServer/srcv
 											  // For further information on 'status' structure, there are other reasons such as a failed transfer that could be used
@@ -3793,8 +3730,8 @@ void handleFileUpload() { // upload a new file to the Filing system
 		if (!filename.startsWith("/")) filename = "/" + filename;
 		Serial.print("Upload File Name: "); Serial.println(filename);
 		SD.remove(filename);                         // Remove a previous version, otherwise data is appended the file again
-		//UploadFile = SD.open(filename, FILE_WRITE);  // Open the file for writing in SPIFFS (create it, if doesn't exist)
-		UploadFile = SD.open(filename, O_WRITE | O_CREAT);
+		UploadFile = SD.open(filename, FILE_WRITE);  // Open the file for writing in SPIFFS (create it, if doesn't exist)
+		//UploadFile = SD.open(filename, O_WRITE | O_CREAT);
 		filename = String();
 	}
 	else if (uploadfile.status == UPLOAD_FILE_WRITE)
@@ -3950,7 +3887,7 @@ void ReportSDNotPresent() {
 
 void SD_file_download(String filename) {
 	if (bSdCardValid) {
-		FsFile download = SD.open("/" + filename);
+		SDFile download = SD.open("/" + filename);
 		if (download) {
 			server.sendHeader("Content-Type", "text/text");
 			server.sendHeader("Content-Disposition", "attachment; filename=" + filename);

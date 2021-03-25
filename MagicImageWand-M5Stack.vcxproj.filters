@@ -27,5 +27,8 @@
     <ClInclude Include="MagicImageWand-M5Stack.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="fonts.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

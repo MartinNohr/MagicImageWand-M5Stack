@@ -5,7 +5,7 @@ String myVersion = "1.00";
 
 // ***** Various switchs for options are set here *****
 // 1 for standard SD library, 0 for the new exFat library
-#define USE_STANDARD_SD 0
+#define USE_STANDARD_SD 1
 // *****
 // M5 core2
 #define DIAL_BTN 19
@@ -22,7 +22,7 @@ String myVersion = "1.00";
 
 #include <time.h>
 #if USE_STANDARD_SD
-#include "SD.h"
+//#include "SD.h"
 #else
 #include <SdFatConfig.h>
 #include <sdfat.h>
@@ -52,19 +52,19 @@ String file_size(int bytes) {
 #include <FastLED.h>
 #include <EEPROM.h>
 #include "RotaryDialButton.h"
-#include <TFT_eSPI.h>
+//#include <TFT_eSPI.h>
 #include <vector>
 #include <stack>
 //#include <fonts/GFXFF/FreeMono18pt7b.h>
 
 #if USE_STANDARD_SD
-SPIClass spiSDCard;
+//SPIClass spiSDCard;
 #else
   //SPIClass spi1(VSPI);
 SdFs SD; // fat16/32 and exFAT
 #endif
 
-/ menu code definitions
+// menu code definitions
 #define BTN_SELECT		CRotaryDialButton::BTN_CLICK
 #define BTN_NONE		CRotaryDialButton::BTN_NONE
 #define BTN_LEFT		CRotaryDialButton::BTN_LEFT
@@ -130,8 +130,8 @@ bool SaveSettings(bool save, bool bOnlySignature = false, bool bAutoloadFlag = f
 RTC_DATA_ATTR int nDisplayBrightness = 100;           // this is in %
 bool bSdCardValid = false;              // set to true when card is found
 // strip leds
-#define DATA_PIN1 2
-#define DATA_PIN2 17
+#define DATA_PIN1 32
+#define DATA_PIN2 33
 #define NUM_LEDS 144
 // Define the array of leds, up to 288
 enum STRIPS_MODE { STRIPS_MIDDLE_WIRED = 0, STRIPS_CHANGED, STRIPS_OUTSIDE_WIRED };
@@ -294,10 +294,10 @@ void ReadBattery(MenuItem* menu);
 void ShowBmp(MenuItem* menu);
 
 // SD details
-#define SDcsPin    33  // GPIO33
-#define SDSckPin   25  // GIPO25
-#define SDMisoPin  27  // GPIO27
-#define SDMosiPin  26  // GPIO26
+#define SDcsPin    04  // GPIO04
+#define SDSckPin   18  // GIPO18
+#define SDMisoPin  38  // GPIO38
+#define SDMosiPin  23  // GPIO23
 
 // adjustment values for builtins
 RTC_DATA_ATTR uint8_t gHue = 0; // rotating "base color" used by many of the patterns
@@ -893,7 +893,7 @@ struct MENUINFO {
 typedef MENUINFO MenuInfo;
 MenuInfo* menuPtr;
 std::stack<MenuInfo*> MenuStack;
-#define MENULINES 8
+#define MENU_LINES 8
 
 bool bMenuChanged = true;
 
@@ -939,4 +939,4 @@ struct SETTINGVAR SettingsVarList[] = {
     {"REVERSE DIAL",&CRotaryDialButton::m_bReverseDial,vtBool},
 };
 
-std::array<Button*, MENULINES> btnMenuArray;
+std::array<Button*, MENU_LINES> btnMenuArray;
