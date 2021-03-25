@@ -8,11 +8,6 @@
 #include <EEPROM.h>
 #include "fonts.h"
 
-/*
- Name:		MagicImageWand.ino
- Created:	12/18/2020 6:12:01 PM
- Author:	Martin
-*/
 #include "MagicImageWand-M5Stack.h"
 
 #define tft m5.Lcd
@@ -42,7 +37,7 @@ void IRAM_ATTR oneshot_LED_timer_callback(void* arg)
 
 void setup()
 {
-	m5.begin(true, false, true, false);
+	m5.begin(true, true, true, false);
 	Serial.begin(115200);
 	delay(10);
 	tft.setFreeFont(FSS12);
@@ -108,11 +103,10 @@ void setup()
 		tft.drawString(__DATE__, 20, 110);
 	}
 	delay(1000);
-	tft.setFreeFont(&Dialog_bold_16);
-	charHeight = tft.fontHeight();
+	//tft.setFreeFont(&Dialog_bold_16);
+	tft.setFreeFont(FSS12);
 	tft.setTextColor(menuLineActiveColor);
 
-	EEPROM.begin(1024);
 	// this will fix the signature if necessary
 	if (SaveSettings(false, true)) {
 		// get the autoload flag
@@ -940,8 +934,8 @@ void SetMenuColors(MenuItem* menu)
 	while (!done) {
 		if (change) {
 			DisplayLine(3, String("Click: ") + (mode ? "Normal" : "Active") + " Color");
-			DisplayLine(0, "Active", menuLineActiveColor);
-			DisplayLine(1, "Normal", menuLineColor);
+			DisplayLine(0, "Active", 0, menuLineActiveColor);
+			DisplayLine(1, "Normal", 0, menuLineColor);
 			change = false;
 		}
 		switch (CRotaryDialButton::dequeue()) {
@@ -1093,7 +1087,8 @@ bool HandleMenus()
 bool HandleRunMode()
 {
 	bool didsomething = true;
-	switch (ReadButton()) {
+	CRotaryDialButton::Button btn = ReadButton();
+	switch (btn) {
 	case BTN_SELECT:
 		bCancelRun = bCancelMacro = false;
 		ProcessFileOrTest();
@@ -1122,11 +1117,28 @@ bool HandleRunMode()
 		bSettingsMode = true;
 		break;
 	case BTN_SWIPEUP:
+		CurrentFileIndex += MENU_LINES;
+		CurrentFileIndex = constrain(CurrentFileIndex, 0, FileNames.size() - MENU_LINES);
+		DisplayCurrentFile();
 		break;
 	case BTN_SWIPEDOWN:
+		CurrentFileIndex -= MENU_LINES;
+		if (CurrentFileIndex < 0)
+			CurrentFileIndex = 0;
+		DisplayCurrentFile();
 		break;
 	default:
-		didsomething = false;
+		if (btn >= BTN_MENU) {
+			btn = (CRotaryDialButton::Button)(btn - BTN_MENU);
+			//Serial.println("run touch: " + String(btn));
+			if (btn + CurrentFileIndex < FileNames.size()) {
+				CurrentFileIndex += btn;
+				CRotaryDialButton::pushButton(BTN_SELECT);
+			}
+		}
+		else {
+			didsomething = false;
+		}
 		break;
 	}
 	return didsomething;
@@ -1169,6 +1181,7 @@ enum CRotaryDialButton::Button ReadButton()
 	for (int ix = 0; ix < btnMenuArray.size(); ++ix) {
 		if (btnMenuArray[ix] && btnMenuArray[ix]->event == E_TAP) {
 			retValue = (CRotaryDialButton::Button)(BTN_MENU + ix);
+			//Serial.println("touch: " + String(ix) + " " + String(retValue));
 			break;
 		}
 	}
@@ -2566,7 +2579,7 @@ void ShowBmp(MenuItem*)
 	}
 	bool bSawButton0 = !digitalRead(0);
 	uint16_t* scrBuf;
-	scrBuf = (uint16_t*)calloc(240 * 135, sizeof(uint16_t));
+	scrBuf = (uint16_t*)calloc(320 * 144, sizeof(uint16_t));
 	if (scrBuf == NULL) {
 		WriteMessage("Not enough memory", true, 5000);
 		return;
@@ -2630,15 +2643,22 @@ void ShowBmp(MenuItem*)
 		lineLength = (lineLength / 4 + 1) * 4;
 	bool done = false;
 	bool redraw = true;
-	bool allowScroll = imgHeight > 240;
+	bool allowScroll = imgHeight > 320;
 	// offset for showing the image
 	int imgOffset = 0;
 	int oldImgOffset;
 	bool bShowingSize = false;
+	// show some info
+	float walk = (float)imgHeight / (float)imgWidth;
+	DisplayLine(5, "" + String(walk, 2) + " meters " + String(walk * 3.28084, 1) + " feet");
+	DisplayLine(6, "Size: " + String(imgWidth) + " x " + String(imgHeight));
+	// calculate display time
+	float dspTime = bFixedTime ? nFixedImageTime : (imgHeight * nFrameHold / 1000.0 + imgHeight * .008);
+	DisplayLine(7, "About " + String((int)round(dspTime)) + " Seconds");
 	while (!done) {
 		if (redraw) {
 			// loop through the image, y is the image width, and x is the image height
-			for (int y = imgOffset; y < (imgHeight > 240 ? 240 : imgHeight) + imgOffset; ++y) {
+			for (int y = imgOffset; y < (imgHeight > 320 ? 320 : imgHeight) + imgOffset; ++y) {
 				int bufpos = 0;
 				CRGB pixel;
 				// get to start of pixel data for this column
@@ -2649,18 +2669,18 @@ void ShowBmp(MenuItem*)
 					// add to the display memory
 					int row = x - 5;
 					int col = y - imgOffset;
-					if (row >= 0 && row < 135) {
+					if (row >= 0 && row < 144) {
 						uint16_t color = tft.color565(pixel.r, pixel.g, pixel.b);
 						uint16_t sbcolor;
 						// the memory image colors are byte swapped
 						swab(&color, &sbcolor, 2);
-						scrBuf[(134 - row) * 240 + col] = sbcolor;
+						scrBuf[(143 - row) * 320 + col] = sbcolor;
 					}
 				}
 			}
 			oldImgOffset = imgOffset;
 			// got it all, go show it
-			tft.pushRect(0, 0, 240, 135, scrBuf);
+			tft.pushRect(0, 0, 320, 144, scrBuf);
 		}
 		if (bSawButton0) {
 			while (digitalRead(0) == 0)
@@ -2671,39 +2691,38 @@ void ShowBmp(MenuItem*)
 		switch (ReadButton()) {
 		case CRotaryDialButton::BTN_LEFT:
 			if (allowScroll) {
-				imgOffset -= 240;
+				imgOffset -= 320;
 				imgOffset = max(0, imgOffset);
 			}
 			break;
 		case CRotaryDialButton::BTN_RIGHT:
 			if (allowScroll) {
-				imgOffset += 240;
-				imgOffset = min((int32_t)imgHeight - 240, imgOffset);
+				imgOffset += 320;
+				imgOffset = min((int32_t)imgHeight - 320, imgOffset);
 			}
 			break;
 		case CRotaryDialButton::BTN_LONGPRESS:
 			done = true;
 			break;
-		case CRotaryDialButton::BTN_CLICK:
-			if (bShowingSize) {
-				bShowingSize = false;
-				redraw = true;
-			}
-			else {
-				tft.fillScreen(TFT_BLACK);
-				//DisplayLine(0, currentFolder);
-				DisplayLine(0, FileNames[CurrentFileIndex]);
-				float walk = (float)imgHeight / (float)imgWidth;
-				DisplayLine(2, "" + String(walk, 2) + " meters " + String(walk * 3.28084, 1) + " feet");
-				DisplayLine(3, "Height: " + String(imgWidth));
-				DisplayLine(4, "Width:  " + String(imgHeight));
-				// calculate display time
-				float dspTime = bFixedTime ? nFixedImageTime : (imgHeight * nFrameHold / 1000.0 + imgHeight * .008);
-				DisplayLine(5, "About " + String((int)round(dspTime)) + " Seconds");
-				bShowingSize = true;
-				redraw = false;
-			}
-			break;
+		//case CRotaryDialButton::BTN_CLICK:
+		//	if (bShowingSize) {
+		//		bShowingSize = false;
+		//		redraw = true;
+		//	}
+		//	else {
+		//		tft.fillScreen(TFT_BLACK);
+		//		//DisplayLine(0, currentFolder);
+		//		//DisplayLine(4, FileNames[CurrentFileIndex]);
+		//		float walk = (float)imgHeight / (float)imgWidth;
+		//		DisplayLine(5, "" + String(walk, 2) + " meters " + String(walk * 3.28084, 1) + " feet");
+		//		DisplayLine(6, "Size: " + String(imgWidth) + " x " + String(imgHeight));
+		//		// calculate display time
+		//		float dspTime = bFixedTime ? nFixedImageTime : (imgHeight * nFrameHold / 1000.0 + imgHeight * .008);
+		//		DisplayLine(7, "About " + String((int)round(dspTime)) + " Seconds");
+		//		bShowingSize = true;
+		//		redraw = false;
+		//	}
+		//	break;
 		}
 		if (oldImgOffset != imgOffset) {
 			redraw = true;
@@ -2742,7 +2761,7 @@ void DisplayMenuLine(int line, int displine, String text)
 	bool hilite = MenuStack.top()->index == line;
 	String mline = (hilite ? "*" : " ") + text;
 	if (displine < MENU_LINES)
-		DisplayLine(displine, mline, hilite ? menuLineActiveColor : menuLineColor);
+		DisplayLine(displine, mline, 0, hilite ? menuLineActiveColor : menuLineColor);
 }
 
 uint32_t IRAM_ATTR readLong() {
@@ -2860,12 +2879,12 @@ void DisplayCurrentFile(bool path)
 		}
 	}
 	if (!bIsRunning && bShowNextFiles) {
-		for (int ix = 1; ix < MENU_LINES - 1; ++ix) {
+		for (int ix = 1; ix < MENU_LINES; ++ix) {
 			if (ix + CurrentFileIndex >= FileNames.size()) {
-				DisplayLine(ix, "", menuLineColor);
+				DisplayLine(ix, "", 0, menuLineColor);
 			}
 			else {
-				DisplayLine(ix, "   " + FileNames[CurrentFileIndex + ix], menuLineColor);
+				DisplayLine(ix, "   " + FileNames[CurrentFileIndex + ix], 0, menuLineColor);
 			}
 		}
 	}
@@ -3298,6 +3317,7 @@ bool WriteOrDeleteConfigFile(String filename, bool remove, bool startfile)
 // return true if valid, false if failed
 bool SaveSettings(bool save, bool bOnlySignature, bool bAutoloadOnlyFlag)
 {
+	EEPROM.begin(1024);
 	bool retvalue = true;
 	int blockpointer = 0;
 	for (int ix = 0; ix < (sizeof(saveValueList) / sizeof(*saveValueList)); blockpointer += saveValueList[ix++].size) {
@@ -3354,6 +3374,7 @@ bool SaveSettings(bool save, bool bOnlySignature, bool bAutoloadOnlyFlag)
 	if (save || !bAutoloadOnlyFlag) {
 		WriteMessage(String(save ? (bAutoloadOnlyFlag ? "Autoload Saved" : "Settings Saved") : "Settings Loaded"), false, 1000);
 	}
+	EEPROM.end();
 	return retvalue;
 }
 

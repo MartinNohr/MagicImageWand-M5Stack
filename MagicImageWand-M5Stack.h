@@ -161,7 +161,6 @@ struct {
     int b;
 } whiteBalance = { 255,255,255 };
 // settings
-int charHeight = 19;
 RTC_DATA_ATTR uint16_t menuLineColor = TFT_CYAN;
 RTC_DATA_ATTR uint16_t menuLineActiveColor = TFT_WHITE;
 #define NEXT_FOLDER_CHAR '>'
