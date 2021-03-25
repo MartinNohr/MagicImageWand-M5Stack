@@ -1117,12 +1117,12 @@ bool HandleRunMode()
 		bSettingsMode = true;
 		break;
 	case BTN_SWIPEUP:
-		CurrentFileIndex += MENU_LINES;
+		CurrentFileIndex += MENU_LINES - 1;
 		CurrentFileIndex = constrain(CurrentFileIndex, 0, FileNames.size() - MENU_LINES);
 		DisplayCurrentFile();
 		break;
 	case BTN_SWIPEDOWN:
-		CurrentFileIndex -= MENU_LINES;
+		CurrentFileIndex -= MENU_LINES - 1;
 		if (CurrentFileIndex < 0)
 			CurrentFileIndex = 0;
 		DisplayCurrentFile();
@@ -2191,7 +2191,7 @@ void ProcessFileOrTest()
 	bIsRunning = true;
 	nProgress = 0;
 	// clear the rest of the lines
-	for (int ix = 1; ix < MENU_LINES - 1; ++ix)
+	for (int ix = 1; ix < MENU_LINES; ++ix)
 		DisplayLine(ix, "");
 	//DisplayCurrentFile();
 	if (startDelay) {
