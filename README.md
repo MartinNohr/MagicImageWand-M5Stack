@@ -9,3 +9,5 @@ Some gray M5's use different IMU's. Select the correct one.
 #define M5STACK_MPU9250 
 //#define M5STACK_MPU6050
 //#define M5STACK_200Q
+
+See the photos for the wiring. I will add a schematic later.
