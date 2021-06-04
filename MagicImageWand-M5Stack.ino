@@ -5,6 +5,8 @@
 */
 
 #include <M5Core2.h>
+#undef min
+
 #include <EEPROM.h>
 #include "fonts.h"
 
